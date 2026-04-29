@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MICRO-TRACK — Multi-Camera ReID</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Syne:wght@400;500;600;700;800&display=swap');
+
+  :root {
+    --bg:        #080c10;
+    --bg2:       #0d1117;
+    --bg3:       #111820;
+    --border:    #1e2a38;
+    --border2:   #243040;
+    --accent:    #00d4ff;
+    --accent2:   #0099cc;
+    --green:     #00ff88;
+    --amber:     #ffaa00;
+    --red:       #ff4466;
+    --text:      #c8d8e8;
+    --text2:     #6a8aa8;
+    --text3:     #3a5a78;
+    --mono:      'JetBrains Mono', monospace;
+    --sans:      'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Scanline overlay ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,212,255,0.012) 2px,
+      rgba(0,212,255,0.012) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: var(--sans);
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--accent);
+  }
+
+  .logo span { color: var(--text2); font-weight: 400; font-size: 13px; margin-left: 8px; }
+
+  .status-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border2);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .status-pill.idle   { color: var(--text2); border-color: var(--border2); }
+  .status-pill.live   { color: var(--green);  border-color: var(--green);  }
+  .status-pill.live .dot { background: var(--green); animation: pulse 1.2s infinite; }
+  .status-pill.stopped { color: var(--red);   border-color: var(--red); }
+
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--text3);
+  }
+
+  @keyframes pulse {
+    0%,100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.5; transform: scale(0.7); }
+  }
+
+  .header-stats {
+    margin-left: auto;
+    display: flex;
+    gap: 24px;
+    align-items: center;
+  }
+
+  .hstat { text-align: right; }
+  .hstat-val { font-size: 18px; font-weight: 600; color: var(--accent); }
+  .hstat-lbl { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.08em; }
+
+  /* ── Layout ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    height: calc(100vh - 53px);
+    overflow: hidden;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .sidebar-section {
+    border-bottom: 1px solid var(--border);
+    padding: 16px;
+  }
+
+  .sidebar-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text3);
+    margin-bottom: 12px;
+  }
+
+  label {
+    display: block;
+    font-size: 11px;
+    color: var(--text2);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  input[type=text], input[type=number] {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    margin-bottom: 10px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  input:focus { border-color: var(--accent2); }
+
+  .cam-entry {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    position: relative;
+  }
+
+  .cam-entry input { margin-bottom: 6px; }
+  .cam-entry input:last-child { margin-bottom: 0; }
+
+  .cam-entry .cam-num {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    font-size: 10px;
+    color: var(--text3);
+  }
+
+  .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+
+  button {
+    font-family: var(--mono);
+    font-size: 12px;
+    border-radius: 6px;
+    padding: 8px 14px;
+    cursor: pointer;
+    border: 1px solid;
+    transition: all 0.15s;
+    letter-spacing: 0.04em;
+  }
+
+  .btn-add {
+    background: transparent;
+    border-color: var(--border2);
+    color: var(--text2);
+    width: 100%;
+  }
+  .btn-add:hover { border-color: var(--accent2); color: var(--accent); }
+
+  .btn-start {
+    flex: 1;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg);
+    font-weight: 600;
+  }
+  .btn-start:hover { background: var(--accent2); border-color: var(--accent2); }
+  .btn-start:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-stop {
+    flex: 1;
+    background: transparent;
+    border-color: var(--red);
+    color: var(--red);
+  }
+  .btn-stop:hover { background: rgba(255,68,102,0.1); }
+  .btn-stop:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .btn-remove {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text3);
+    padding: 4px 8px;
+    font-size: 11px;
+    margin-top: 4px;
+  }
+  .btn-remove:hover { border-color: var(--red); color: var(--red); }
+
+  /* ── Gallery stats ── */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .stat-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+
+  .stat-val {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--accent);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .stat-lbl {
+    font-size: 10px;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* ── Camera rows in sidebar ── */
+  .cam-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .cam-status:last-child { border-bottom: none; }
+  .cam-status-name { color: var(--text); font-size: 12px; }
+  .cam-status-fps  { font-size: 11px; color: var(--text2); }
+  .cam-status-dot  { width: 8px; height: 8px; border-radius: 50%; background: var(--text3); }
+  .cam-status-dot.live { background: var(--green); animation: pulse 1.2s infinite; }
+
+  /* ── Log panel ── */
+  .log-panel {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    height: 160px;
+    overflow-y: auto;
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.7;
+  }
+
+  .log-line { color: var(--text2); }
+  .log-line.cam  { color: var(--text); }
+  .log-line.xcam { color: var(--accent); }
+  .log-line.new  { color: var(--green); }
+  .log-line.err  { color: var(--red); }
+  .log-line.info { color: var(--amber); }
+
+  /* ── Main content ── */
+  .main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Feeds grid ── */
+  .feeds {
+    flex: 1;
+    padding: 16px;
+    overflow-y: auto;
+    display: grid;
+    gap: 12px;
+    align-content: start;
+  }
+
+  .feeds.cams-1 { grid-template-columns: 1fr; }
+  .feeds.cams-2 { grid-template-columns: 1fr 1fr; }
+  .feeds.cams-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .feeds.cams-4 { grid-template-columns: 1fr 1fr; }
+  .feeds.cams-5,
+  .feeds.cams-6 { grid-template-columns: 1fr 1fr 1fr; }
+
+  .feed-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+    position: relative;
+  }
+
+  .feed-card.active { border-color: var(--accent2); }
+
+  .feed-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg3);
+  }
+
+  .feed-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    font-family: var(--sans);
+  }
+
+  .feed-fps {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .feed-active {
+    font-size: 11px;
+    color: var(--green);
+  }
+
+  .feed-img-wrap {
+    position: relative;
+    background: #000;
+    aspect-ratio: 16/9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .feed-img-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .feed-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    color: var(--text3);
+    font-size: 12px;
+  }
+
+  .feed-placeholder svg { opacity: 0.3; }
+
+  /* ── Waiting screen ── */
+  #waiting {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    color: var(--text3);
+  }
+
+  .waiting-title {
+    font-family: var(--sans);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text2);
+    letter-spacing: -0.5px;
+  }
+
+  .waiting-sub { font-size: 12px; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header>
+  <div class="logo">MICRO-TRACK <span>Multi-Camera ReID Dashboard</span></div>
+  <div class="status-pill idle" id="status-pill">
+    <div class="dot"></div>
+    <span id="status-text">IDLE</span>
+  </div>
+  <div class="header-stats">
+    <div class="hstat">
+      <div class="hstat-val" id="h-ids">0</div>
+      <div class="hstat-lbl">Total IDs</div>
+    </div>
+    <div class="hstat">
+      <div class="hstat-val" id="h-gallery">0</div>
+      <div class="hstat-lbl">In Gallery</div>
+    </div>
+    <div class="hstat">
+      <div class="hstat-val" id="h-cams">0</div>
+      <div class="hstat-lbl">Cameras</div>
+    </div>
+  </div>
+</header>
+
+<!-- ── Layout ── -->
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+
+    <!-- Config -->
+    <div class="sidebar-section">
+      <div class="sidebar-title">Camera Sources</div>
+      <div id="cam-list"></div>
+      <button class="btn-add" onclick="addCam()">+ Add Camera</button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">Model Paths</div>
+      <label>YOLO Model</label>
+      <input type="text" id="yolo-model" value="yolov8m.pt">
+      <label>ReID Model (ONNX)</label>
+      <input type="text" id="reid-model" value="onnx_model/resnet50_reid.onnx">
+      <label>Conf Threshold</label>
+      <input type="number" id="conf-thresh" value="0.50" min="0.1" max="1.0" step="0.05">
+      <label>Retention (seconds)</label>
+      <input type="number" id="retention" value="43200" min="60">
+    </div>
+
+    <div class="sidebar-section">
+      <div class="btn-row">
+        <button class="btn-start" id="btn-start" onclick="startPipeline()">▶ START</button>
+        <button class="btn-stop"  id="btn-stop"  onclick="stopPipeline()" disabled>■ STOP</button>
+      </div>
+    </div>
+
+    <!-- Live camera status -->
+    <div class="sidebar-section" id="cam-status-section" style="display:none">
+      <div class="sidebar-title">Live Status</div>
+      <div id="cam-status-list"></div>
+    </div>
+
+    <!-- Gallery stats -->
+    <div class="sidebar-section">
+      <div class="sidebar-title">Gallery</div>
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-val" id="s-total">0</div>
+          <div class="stat-lbl">IDs Issued</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="s-gallery">0</div>
+          <div class="stat-lbl">In Store</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="s-snaps">—</div>
+          <div class="stat-lbl">Avg Snaps</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="s-oldest">—</div>
+          <div class="stat-lbl">Oldest (hrs)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="sidebar-section" style="flex:1">
+      <div class="sidebar-title">System Log</div>
+      <div class="log-panel" id="log-panel"></div>
+    </div>
+
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div id="waiting">
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+        <rect x="4" y="4" width="18" height="18" rx="2" stroke="#3a5a78" stroke-width="1.5"/>
+        <rect x="26" y="4" width="18" height="18" rx="2" stroke="#3a5a78" stroke-width="1.5"/>
+        <rect x="4" y="26" width="18" height="18" rx="2" stroke="#3a5a78" stroke-width="1.5"/>
+        <rect x="26" y="26" width="18" height="18" rx="2" stroke="#3a5a78" stroke-width="1.5"/>
+        <circle cx="13" cy="13" r="3" fill="#3a5a78"/>
+        <circle cx="35" cy="13" r="3" fill="#3a5a78"/>
+        <circle cx="13" cy="35" r="3" fill="#3a5a78"/>
+        <circle cx="35" cy="35" r="3" fill="#3a5a78"/>
+      </svg>
+      <div class="waiting-title">No feeds active</div>
+      <div class="waiting-sub">Add camera sources and press START</div>
+    </div>
+    <div class="feeds" id="feeds" style="display:none"></div>
+  </main>
+
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let camCount  = 0;
+let camIds    = [];          // list of cam input group ids
+let frameWs   = null;
+let logWs     = null;
+let statusInt = null;
+let feedCards = {};          // cam_id → {img, fps, active}
+let running   = false;
+
+const HOST = window.location.host;
+
+// ── Camera list builder ────────────────────────────────────────────────────
+function addCam(label='', url='') {
+  const id  = ++camCount;
+  const div = document.createElement('div');
+  div.className = 'cam-entry';
+  div.id = `cam-entry-${id}`;
+  div.innerHTML = `
+    <span class="cam-num">CAM ${id}</span>
+    <label>Label</label>
+    <input type="text" id="cam-label-${id}" value="${label || 'Zone-' + id}" placeholder="Zone-1">
+    <label>URL / Path</label>
+    <input type="text" id="cam-url-${id}" value="${url}" placeholder="rtsp://... or Test_Video/CAM1.mp4">
+    <button class="btn-remove" onclick="removeCam(${id})">✕ Remove</button>
+  `;
+  document.getElementById('cam-list').appendChild(div);
+  camIds.push(id);
+}
+
+function removeCam(id) {
+  const el = document.getElementById(`cam-entry-${id}`);
+  if (el) el.remove();
+  camIds = camIds.filter(x => x !== id);
+}
+
+// Default: two cameras
+addCam('Zone-1', 'Test_Video/CAM1.mp4');
+addCam('Zone-2', 'Test_Video/CAM2.mp4');
+
+// ── Start / Stop ───────────────────────────────────────────────────────────
+async function startPipeline() {
+  const sources = camIds
+    .filter(id => document.getElementById(`cam-entry-${id}`))
+    .map(id => ({
+      label: document.getElementById(`cam-label-${id}`).value.trim(),
+      url:   document.getElementById(`cam-url-${id}`).value.trim(),
+    }))
+    .filter(s => s.url);
+
+  if (!sources.length) { addLog('No valid camera sources.', 'err'); return; }
+
+  const config = {
+    sources,
+    yolo_model:        document.getElementById('yolo-model').value.trim(),
+    reid_model:        document.getElementById('reid-model').value.trim(),
+    conf_thresh:       parseFloat(document.getElementById('conf-thresh').value),
+    retention_seconds: parseFloat(document.getElementById('retention').value),
+  };
+
+  const res = await fetch('/api/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(config),
+  });
+  const data = await res.json();
+  if (!data.ok) { addLog(data.msg, 'err'); return; }
+
+  running = true;
+  setStatus('live');
+  document.getElementById('btn-start').disabled = true;
+  document.getElementById('btn-stop').disabled  = false;
+
+  // Build feed cards
+  buildFeeds(sources);
+  connectWebSockets();
+  startStatusPolling();
+}
+
+async function stopPipeline() {
+  await fetch('/api/stop', { method: 'POST' });
+  running = false;
+  setStatus('stopped');
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-stop').disabled  = true;
+  if (frameWs) frameWs.close();
+  if (logWs)   logWs.close();
+  clearInterval(statusInt);
+  addLog('Pipeline stopped.', 'info');
+}
+
+// ── Feeds ──────────────────────────────────────────────────────────────────
+function buildFeeds(sources) {
+  const feeds = document.getElementById('feeds');
+  const wait  = document.getElementById('waiting');
+  feeds.innerHTML = '';
+  feedCards = {};
+
+  const n = sources.length;
+  feeds.className = `feeds cams-${Math.min(n, 6)}`;
+  wait.style.display  = 'none';
+  feeds.style.display = 'grid';
+
+  document.getElementById('h-cams').textContent = n;
+
+  sources.forEach((src, i) => {
+    const card = document.createElement('div');
+    card.className = 'feed-card';
+    card.id = `feed-${i}`;
+    card.innerHTML = `
+      <div class="feed-header">
+        <div class="dot cam-status-dot" id="dot-${i}"></div>
+        <div class="feed-label">${src.label}</div>
+        <div class="feed-active" id="active-${i}"></div>
+        <div class="feed-fps" id="fps-${i}">— fps</div>
+      </div>
+      <div class="feed-img-wrap">
+        <div class="feed-placeholder" id="placeholder-${i}">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <rect x="2" y="6" width="28" height="20" rx="3" stroke="#3a5a78" stroke-width="1.5"/>
+            <circle cx="16" cy="16" r="5" stroke="#3a5a78" stroke-width="1.5"/>
+          </svg>
+          <span>Waiting for feed…</span>
+        </div>
+        <img id="img-${i}" style="display:none" alt="feed ${i}">
+      </div>
+    `;
+    feeds.appendChild(card);
+    feedCards[i] = { img: card.querySelector(`#img-${i}`), fps: card.querySelector(`#fps-${i}`),
+                     active: card.querySelector(`#active-${i}`), dot: card.querySelector(`#dot-${i}`),
+                     ph: card.querySelector(`#placeholder-${i}`), card };
+  });
+}
+
+// ── WebSockets ─────────────────────────────────────────────────────────────
+function connectWebSockets() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+
+  frameWs = new WebSocket(`${proto}://${HOST}/ws/frames`);
+  frameWs.onmessage = e => {
+    const d = JSON.parse(e.data);
+    const f = feedCards[d.cam_id];
+    if (!f) return;
+    f.img.src = 'data:image/jpeg;base64,' + d.frame;
+    f.img.style.display = 'block';
+    f.ph.style.display  = 'none';
+    f.fps.textContent   = d.fps.toFixed(1) + ' fps';
+    f.dot.classList.add('live');
+    f.card.classList.add('active');
+  };
+  frameWs.onclose = () => { if (running) setTimeout(connectWebSockets, 1500); };
+
+  logWs = new WebSocket(`${proto}://${HOST}/ws/logs`);
+  logWs.onmessage = e => {
+    const d = JSON.parse(e.data);
+    (d.logs || []).forEach(addLog);
+  };
+  logWs.onclose = () => { if (running) setTimeout(() => {
+    logWs = new WebSocket(`${proto}://${HOST}/ws/logs`);
+  }, 1500); };
+}
+
+// ── Status polling ─────────────────────────────────────────────────────────
+function startStatusPolling() {
+  statusInt = setInterval(async () => {
+    try {
+      const res  = await fetch('/api/status');
+      const data = await res.json();
+      updateStats(data);
+    } catch(_) {}
+  }, 2000);
+}
+
+function updateStats(data) {
+  const g = data.gallery || {};
+  document.getElementById('h-ids').textContent     = g.total_ids   || 0;
+  document.getElementById('h-gallery').textContent = g.gallery_size || 0;
+  document.getElementById('s-total').textContent   = g.total_ids   || 0;
+  document.getElementById('s-gallery').textContent = g.gallery_size || 0;
+  document.getElementById('s-snaps').textContent   = g.avg_snapshots || '—';
+  document.getElementById('s-oldest').textContent  = g.oldest_hrs   || '—';
+
+  // Camera status list in sidebar
+  const section = document.getElementById('cam-status-section');
+  const list    = document.getElementById('cam-status-list');
+  if (data.workers && data.workers.length) {
+    section.style.display = 'block';
+    list.innerHTML = data.workers.map(w => `
+      <div class="cam-status">
+        <div>
+          <div class="cam-status-name">${w.label}</div>
+          <div class="cam-status-fps">${w.fps} fps · ${w.active} active</div>
+        </div>
+        <div class="cam-status-dot ${w.connected ? 'live' : ''}"></div>
+      </div>
+    `).join('');
+
+    // Update active counts on feed cards
+    data.workers.forEach(w => {
+      const f = feedCards[w.cam_id];
+      if (f) f.active.textContent = w.active > 0 ? `${w.active} person${w.active > 1 ? 's' : ''}` : '';
+    });
+  }
+}
+
+// ── Log ────────────────────────────────────────────────────────────────────
+function addLog(msg, type) {
+  if (!msg) return;
+  const panel = document.getElementById('log-panel');
+  const line  = document.createElement('div');
+  let cls = 'log-line';
+  if (typeof msg === 'string') {
+    if (msg.includes('XCAM') || msg.includes('Cross-cam'))  cls += ' xcam';
+    else if (msg.includes('NEW') || msg.includes('Stored')) cls += ' new';
+    else if (msg.includes('ERROR') || msg.includes('fail')) cls += ' err';
+    else if (msg.includes('Server') || msg.includes('Pipeline')) cls += ' info';
+    else if (msg.includes('Cam'))                           cls += ' cam';
+  }
+  if (type) cls += ' ' + type;
+  const ts = new Date().toTimeString().slice(0,8);
+  line.className = cls;
+  line.textContent = `[${ts}] ${msg}`;
+  panel.appendChild(line);
+  panel.scrollTop = panel.scrollHeight;
+  // Keep max 300 lines
+  while (panel.children.length > 300) panel.removeChild(panel.firstChild);
+}
+
+// ── Status pill ────────────────────────────────────────────────────────────
+function setStatus(state) {
+  const pill = document.getElementById('status-pill');
+  const txt  = document.getElementById('status-text');
+  pill.className = 'status-pill ' + state;
+  txt.textContent = state === 'live' ? 'LIVE' : state === 'stopped' ? 'STOPPED' : 'IDLE';
+  pill.querySelector('.dot').className = 'dot';
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+addLog('MICRO-TRACK dashboard ready. Configure cameras and press START.', 'info');
+</script>
+</body>
+</html>
